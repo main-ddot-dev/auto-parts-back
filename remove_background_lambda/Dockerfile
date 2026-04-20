@@ -1,10 +1,10 @@
-# 1. Official AWS image for Python 3.11
-FROM public.ecr.aws/lambda/python:3.11
+# 1. Python 3.12 on Amazon Linux 2023 (modern system libraries and GCC)
+FROM public.ecr.aws/lambda/python:3.12
 
-# 2. Install compiler and required system dependencies
-# gcc and python3-devel for compiling; mesa-libGL for OpenCV (rembg)
-RUN yum install -y gcc gcc-c++ python3-devel mesa-libGL && \
-    yum clean all
+# 2. Install system dependencies for OpenCV and image processing
+# On AL2023 we use 'dnf' instead of 'yum'
+RUN dnf install -y mesa-libGL gcc-c++ python3-devel && \
+    dnf clean all
 
 # 3. Copy dependencies and upgrade pip
 COPY requirements.txt ${LAMBDA_TASK_ROOT}

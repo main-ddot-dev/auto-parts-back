@@ -1,40 +1,43 @@
 import os
+
+# --- MUST be the very first thing — before ANY other import ---
+os.environ['NUMBA_DISABLE_CACHE'] = '1'
+os.environ['HOME'] = '/tmp'
+os.environ['NUMBA_CACHE_DIR'] = '/tmp'
+os.environ['U2NET_HOME'] = '/tmp'
+
 import boto3
 import io
 import logging
 from PIL import Image
 
-# --- CRITICAL: must run BEFORE any rembg/numba import ---
-# Disable Numba cache entirely (avoids "no locator" / read-only errors)
-os.environ['NUMBA_DISABLE_CACHE'] = '1'
-# Force Lambda-compatible threading
-os.environ['NUMBA_THREADING_LAYER'] = 'workqueue'
-os.environ['OMP_NUM_THREADS'] = '1'
-# Prevent rembg from writing to /home/sbx_user1051
-os.environ['U2NET_HOME'] = '/tmp'
-
 # Logger configuration
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
+# Global session for warm starts
+session = None
+
 def handler(event, context):
+    global session
+
     # 1. Symlink baked model to /tmp/u2net.onnx
     baked_model = "/var/task/models/u2net.onnx"
     target_model = "/tmp/u2net.onnx"
 
     if not os.path.exists(target_model):
         try:
-            if os.path.exists(baked_model):
-                os.symlink(baked_model, target_model)
-                logger.info(f"Symlink created: {target_model} -> {baked_model}")
+            os.symlink(baked_model, target_model)
+            logger.info("Symlink created.")
         except Exception as e:
-            logger.warning(f"Error creating symlink: {e}")
+            logger.warning(f"Symlink info: {e}")
 
-    # 2. Lazy import and session init
+    # 2. Import rembg AFTER env vars are set
     from rembg import remove, new_session
 
-    logger.info("Initializing AI session...")
-    session = new_session("u2net", model_path=target_model)
+    if session is None:
+        logger.info("Initializing AI session...")
+        session = new_session("u2net", model_path=target_model)
 
     # 3. S3 event data
     s3 = boto3.client('s3')

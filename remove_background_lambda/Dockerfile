@@ -8,15 +8,18 @@ RUN dnf install -y mesa-libGL gcc-c++ python3-devel && dnf clean all
 COPY requirements.txt ${LAMBDA_TASK_ROOT}
 RUN pip install -r requirements.txt
 
-# 4. Disable Numba cache entirely to avoid read-only filesystem errors
+# 4. Total Numba exclusion — prevent any filesystem access attempts
 ENV NUMBA_DISABLE_CACHE=1
 ENV NUMBA_THREADING_LAYER=workqueue
 ENV OMP_NUM_THREADS=1
+ENV HOME=/tmp
+ENV NUMBA_CACHE_DIR=/tmp
 
-# 5. Download AI model during build and move to fixed path
+# 5. Bake AI model and clean up any Numba cache leftovers from the build
 RUN mkdir -p /var/task/models
 RUN python -c "import os; os.environ['U2NET_HOME']='/tmp'; from rembg import remove; from PIL import Image; remove(Image.new('RGB', (1,1)))" && \
-    mv /tmp/u2net.onnx /var/task/models/u2net.onnx
+    mv /tmp/u2net.onnx /var/task/models/u2net.onnx && \
+    rm -rf /tmp/numba_cache /root/.cache/numba
 RUN chmod -R 755 /var/task/models
 
 # 6. Copy code and set entrypoint

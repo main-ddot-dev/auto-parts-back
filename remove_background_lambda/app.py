@@ -4,8 +4,8 @@ import io
 import logging
 from PIL import Image
 
-# Force U2NET_HOME to /tmp BEFORE any rembg import
-# Prevents "Read-only file system" on /home/sbx_user1051
+# Environment config BEFORE any other imports
+os.environ['NUMBA_CACHE_DIR'] = '/var/task/numba_cache'
 os.environ['U2NET_HOME'] = '/tmp'
 
 # Logger configuration
@@ -18,14 +18,17 @@ session = None
 def handler(event, context):
     global session
     from rembg import remove, new_session
+    import onnxruntime as ort
 
-    # 1. Exact path where the model was placed in the Dockerfile
+    # 1. Load pre-installed model with optimized ONNX settings
     model_path = "/var/task/models/u2net.onnx"
 
     if session is None:
         if os.path.exists(model_path):
-            logger.info(f"Model found at {model_path}. Skipping download.")
-            session = new_session("u2net", model_path=model_path)
+            logger.info(f"Model found at {model_path}. Loading with optimized settings.")
+            opts = ort.SessionOptions()
+            opts.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
+            session = new_session("u2net", model_path=model_path, sess_opts=opts, providers=['CPUExecutionProvider'])
         else:
             logger.error(f"Model not found at {model_path}")
             contents = os.listdir('/var/task/models') if os.path.exists('/var/task/models') else 'Directory not found'

@@ -16,10 +16,18 @@ ort_session = None
 def handler(event, context):
     global ort_session
 
-    # 1. Load model (only on cold start)
+    # 1. Load model using AWS task root (only on cold start)
     if ort_session is None:
-        logger.info("Loading lightweight ONNX AI engine...")
-        model_path = "/var/task/models/u2net.onnx"
+        task_root = os.environ.get('LAMBDA_TASK_ROOT', '/var/task')
+        model_path = os.path.join(task_root, 'models', 'u2net.onnx')
+
+        logger.info(f"Loading AI from: {model_path}")
+
+        if not os.path.exists(model_path):
+            logger.error(f"Model not found at {model_path}")
+            logger.error(f"Contents of {task_root}: {os.listdir(task_root)}")
+            raise FileNotFoundError(f"Model not found at {model_path}")
+
         sess_opts = ort.SessionOptions()
         sess_opts.intra_op_num_threads = 1
         ort_session = ort.InferenceSession(model_path, sess_options=sess_opts)
@@ -36,21 +44,20 @@ def handler(event, context):
         original_size = img.size
 
         # Resize for u2net (expects 320x320)
-        input_img = img.resize((320, 320), Image.Resampling.LANCZOS)
-        input_data = np.array(input_img).astype('float32') / 255.0
+        img_resized = img.resize((320, 320), Image.Resampling.LANCZOS)
+        input_data = np.array(img_resized).astype('float32') / 255.0
         input_data = np.transpose(input_data, (2, 0, 1))
         input_data = np.expand_dims(input_data, axis=0)
 
-        # 4. Run AI inference (1-2 seconds)
+        # 4. Run AI inference
         logger.info(f"Processing: {key}")
         ort_inputs = {ort_session.get_inputs()[0].name: input_data}
-        ort_outs = ort_session.run(None, ort_inputs)
+        mask = ort_session.run(None, ort_inputs)[0][0][0]
 
         # 5. Post-process: normalize mask and apply as alpha channel
-        mask = ort_outs[0][0][0]
         mask = (mask - mask.min()) / (mask.max() - mask.min())
-        mask = Image.fromarray((mask * 255).astype('uint8')).resize(original_size, Image.Resampling.LANCZOS)
-        img.putalpha(mask)
+        mask_img = Image.fromarray((mask * 255).astype('uint8')).resize(original_size, Image.Resampling.LANCZOS)
+        img.putalpha(mask_img)
 
         # 6. Save as PNG and upload
         out_buffer = io.BytesIO()

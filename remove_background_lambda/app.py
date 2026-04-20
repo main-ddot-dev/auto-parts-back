@@ -1,5 +1,4 @@
 import os
-import shutil
 import boto3
 import io
 import logging
@@ -14,12 +13,17 @@ s3 = boto3.client('s3')
 
 def handler(event, context):
     try:
-        # 1. Copy model to writable /tmp if not already there
-        model_home = "/tmp/.u2net"
-        os.environ['U2NET_HOME'] = model_home
-        if not os.path.exists(model_home):
-            logger.info("Copying model to /tmp for write permissions...")
-            shutil.copytree("/var/task/.u2net", model_home)
+        # 1. Symlink the model to /tmp (writable) pointing to /var/task (read-only)
+        # Instant (~0.001s) vs shutil.copytree (~10s for 176MB)
+        os.environ['U2NET_HOME'] = '/tmp'
+        model_dir = '/tmp/.u2net'
+        model_file = '/tmp/.u2net/u2net.onnx'
+
+        if not os.path.exists(model_file):
+            os.makedirs(model_dir, exist_ok=True)
+            real_model = '/var/task/model_data/.u2net/u2net.onnx'
+            os.symlink(real_model, model_file)
+            logger.info("Model symlink created successfully.")
 
         # Lazy load rembg to avoid Lambda init timeout (10s limit)
         from rembg import remove

@@ -8,15 +8,14 @@ RUN dnf install -y mesa-libGL gcc-c++ python3-devel && dnf clean all
 COPY requirements.txt ${LAMBDA_TASK_ROOT}
 RUN pip install -r requirements.txt
 
-# 4. Numba build-time settings
+# 4. Build-time environment variables
 ENV NUMBA_CACHE_DIR=/tmp/numba_cache
-ENV NUMBA_THREADING_LAYER=workqueue
 ENV OMP_NUM_THREADS=1
 
-# 5. Download model, generate Numba cache, and move to fixed paths
-RUN mkdir -p /var/task/models /var/task/precompiled_numba
-RUN python -c "import os; from rembg import remove; from PIL import Image; remove(Image.new('RGB', (1,1)))" && \
-    mv /tmp/u2net.onnx /var/task/models/u2net.onnx && \
+# 5. Download model (defaults to /root/.u2net/), generate Numba cache, move to fixed paths
+RUN mkdir -p /var/task/models /var/task/precompiled_numba /tmp/numba_cache
+RUN python -c "from rembg import remove; from PIL import Image; remove(Image.new('RGB', (1,1)))" && \
+    mv /root/.u2net/u2net.onnx /var/task/models/u2net.onnx && \
     cp -r /tmp/numba_cache/* /var/task/precompiled_numba/
 RUN chmod -R 755 /var/task/models /var/task/precompiled_numba
 

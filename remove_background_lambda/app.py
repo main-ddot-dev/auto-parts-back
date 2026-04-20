@@ -5,7 +5,7 @@ import io
 import logging
 from PIL import Image
 
-# --- MUST run BEFORE any rembg/numba import ---
+# --- CRITICAL: environment setup BEFORE any rembg/numba import ---
 # Copy pre-compiled Numba cache from read-only /var/task to writable /tmp
 tmp_cache = '/tmp/numba_cache'
 precompiled_cache = '/var/task/precompiled_numba'
@@ -21,7 +21,7 @@ if not os.path.exists(tmp_cache):
 
 os.environ['NUMBA_CACHE_DIR'] = tmp_cache
 os.environ['U2NET_HOME'] = '/tmp'
-os.environ['NUMBA_THREADING_LAYER'] = 'workqueue'
+os.environ['OMP_NUM_THREADS'] = '1'
 
 # Logger configuration
 logger = logging.getLogger()
@@ -34,17 +34,12 @@ def handler(event, context):
     global session
     from rembg import remove, new_session
 
-    # 1. Load pre-installed model
+    # 1. Load pre-installed model with pre-compiled cache
+    model_path = "/var/task/models/u2net.onnx"
+
     if session is None:
-        model_path = "/var/task/models/u2net.onnx"
-        if os.path.exists(model_path):
-            logger.info(f"Loading AI with pre-compiled cache from {model_path}...")
-            session = new_session("u2net", model_path=model_path)
-        else:
-            logger.error(f"Model not found at {model_path}")
-            contents = os.listdir('/var/task/models') if os.path.exists('/var/task/models') else 'Directory not found'
-            logger.error(f"Contents of /var/task/models: {contents}")
-            raise FileNotFoundError(f"Model not found at {model_path}")
+        logger.info("Initializing AI session with pre-compiled cache...")
+        session = new_session("u2net", model_path=model_path)
 
     # 2. S3 event data
     s3 = boto3.client('s3')
@@ -52,14 +47,15 @@ def handler(event, context):
     key = event['Records'][0]['s3']['object']['key']
 
     try:
+        # 3. Download image from S3
         response = s3.get_object(Bucket=bucket, Key=key)
         input_image = Image.open(io.BytesIO(response['Body'].read()))
 
-        # 3. AI background removal
-        logger.info(f"Starting AI processing for: {key}...")
+        # 4. AI background removal
+        logger.info(f"Processing: {key}")
         output_image = remove(input_image, session=session)
 
-        # 4. Save as PNG and upload
+        # 5. Save as PNG and upload
         out_buffer = io.BytesIO()
         output_image.save(out_buffer, format='PNG')
         out_buffer.seek(0)

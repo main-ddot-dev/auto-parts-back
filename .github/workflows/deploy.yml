@@ -19,11 +19,11 @@ jobs:
           if [[ $GITHUB_REF == 'refs/heads/main' ]]; then
             echo "ENV=prod" >> $GITHUB_ENV
             echo "LAMBDA_NAME=remove_background_lambda_prod" >> $GITHUB_ENV
-            echo "DEST_BUCKET=piezas-sin-fondo-prod" >> $GITHUB_ENV
+            echo "DEST_BUCKET=desguace-paula-back" >> $GITHUB_ENV
           else
             echo "ENV=dev" >> $GITHUB_ENV
             echo "LAMBDA_NAME=remove_background_lambda_dev" >> $GITHUB_ENV
-            echo "DEST_BUCKET=piezas-sin-fondo-dev" >> $GITHUB_ENV
+            echo "DEST_BUCKET=dev.desguace-paula-back" >> $GITHUB_ENV
           fi
 
       - name: Configure AWS credentials
@@ -52,7 +52,7 @@ jobs:
           #   --function-name ${{ env.LAMBDA_NAME }} \
           #   --image-uri $REGISTRY/$REPOSITORY:$IMAGE_TAG
             
-          # Actualizar las variables de entorno de la Lambda
+          # Update Lambda environment variables
           # aws lambda update-function-configuration \
           #   --function-name ${{ env.LAMBDA_NAME }} \
-          #   --environment "Variables={DESTINATION_BUCKET=${{ env.DEST_BUCKET }}}"
+          #   --environment "Variables={DESTINATION_BUCKET=${{ env.DEST_BUCKET }},DESTINATION_PREFIX=remove-background/processed/}"

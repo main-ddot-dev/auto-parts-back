@@ -13,8 +13,9 @@ RUN pip install --upgrade pip
 # 4. Install Python libraries
 RUN pip install -r requirements.txt
 
-# 5. Pre-download the AI model
-ENV U2NET_HOME=${LAMBDA_TASK_ROOT}/.u2net
+# 5. Environment variables for robustness
+ENV NUMBA_CACHE_DIR=/tmp
+ENV U2NET_HOME=/var/task/.u2net
 RUN python -c "from rembg import remove; from PIL import Image; remove(Image.new('RGB', (1,1)))"
 
 # 6. Copy code and set entrypoint

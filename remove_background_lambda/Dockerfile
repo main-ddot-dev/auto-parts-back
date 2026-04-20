@@ -16,10 +16,15 @@ RUN pip install -r requirements.txt
 # 5. Environment variables for robustness
 ENV NUMBA_CACHE_DIR=/tmp
 ENV NUMBA_THREADING_LAYER=workqueue
+ENV NUMBA_NUM_THREADS=1
 ENV OMP_NUM_THREADS=1
-ENV U2NET_HOME=/var/task/.u2net
-RUN python -c "from rembg import remove; from PIL import Image; remove(Image.new('RGB', (1,1)))"
+ENV U2NET_HOME=/tmp/.u2net
 
-# 6. Copy code and set entrypoint
+# 6. Download AI model during build, then fix permissions
+RUN mkdir -p /var/task/.u2net
+RUN python -c "import os; os.environ['U2NET_HOME']='/var/task/.u2net'; from rembg import remove; from PIL import Image; remove(Image.new('RGB', (1,1)))"
+RUN chmod -R 777 /var/task/.u2net
+
+# 7. Copy code and set entrypoint
 COPY app.py ${LAMBDA_TASK_ROOT}
 CMD [ "app.handler" ]

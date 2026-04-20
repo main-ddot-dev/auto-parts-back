@@ -1,12 +1,27 @@
 import os
+import shutil
 import boto3
 import io
 import logging
 from PIL import Image
 
-# Environment config BEFORE any other imports
-os.environ['NUMBA_CACHE_DIR'] = '/var/task/numba_cache'
+# --- MUST run BEFORE any rembg/numba import ---
+# Copy pre-compiled Numba cache from read-only /var/task to writable /tmp
+tmp_cache = '/tmp/numba_cache'
+precompiled_cache = '/var/task/precompiled_numba'
+
+if not os.path.exists(tmp_cache):
+    os.makedirs(tmp_cache, exist_ok=True)
+    if os.path.exists(precompiled_cache):
+        for item in os.listdir(precompiled_cache):
+            src = os.path.join(precompiled_cache, item)
+            dst = os.path.join(tmp_cache, item)
+            if os.path.isfile(src):
+                shutil.copy2(src, dst)
+
+os.environ['NUMBA_CACHE_DIR'] = tmp_cache
 os.environ['U2NET_HOME'] = '/tmp'
+os.environ['NUMBA_THREADING_LAYER'] = 'workqueue'
 
 # Logger configuration
 logger = logging.getLogger()
@@ -18,17 +33,13 @@ session = None
 def handler(event, context):
     global session
     from rembg import remove, new_session
-    import onnxruntime as ort
 
-    # 1. Load pre-installed model with optimized ONNX settings
-    model_path = "/var/task/models/u2net.onnx"
-
+    # 1. Load pre-installed model
     if session is None:
+        model_path = "/var/task/models/u2net.onnx"
         if os.path.exists(model_path):
-            logger.info(f"Model found at {model_path}. Loading with optimized settings.")
-            opts = ort.SessionOptions()
-            opts.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
-            session = new_session("u2net", model_path=model_path, sess_opts=opts, providers=['CPUExecutionProvider'])
+            logger.info(f"Loading AI with pre-compiled cache from {model_path}...")
+            session = new_session("u2net", model_path=model_path)
         else:
             logger.error(f"Model not found at {model_path}")
             contents = os.listdir('/var/task/models') if os.path.exists('/var/task/models') else 'Directory not found'

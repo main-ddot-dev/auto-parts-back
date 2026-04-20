@@ -1,18 +1,22 @@
-# 1. Use the official AWS image for Python 3.11
+# 1. Official AWS image for Python 3.11
 FROM public.ecr.aws/lambda/python:3.11
 
-# 2. Copy dependencies
-COPY requirements.txt ${LAMBDA_TASK_ROOT}
+# 2. Install compiler and required system dependencies
+# gcc and python3-devel for compiling; mesa-libGL for OpenCV (rembg)
+RUN yum install -y gcc gcc-c++ python3-devel mesa-libGL && \
+    yum clean all
 
-# 3. Install everything (rembg, Pillow, boto3)
+# 3. Copy dependencies and upgrade pip
+COPY requirements.txt ${LAMBDA_TASK_ROOT}
+RUN pip install --upgrade pip
+
+# 4. Install Python libraries
 RUN pip install -r requirements.txt
 
-# 4. Set the model path and pre-download it along with the code
+# 5. Pre-download the AI model
 ENV U2NET_HOME=${LAMBDA_TASK_ROOT}/.u2net
 RUN python -c "from rembg import remove; from PIL import Image; remove(Image.new('RGB', (1,1)))"
 
-# 5. Copy our code
+# 6. Copy code and set entrypoint
 COPY app.py ${LAMBDA_TASK_ROOT}
-
-# 6. Tell AWS which function to start
 CMD [ "app.handler" ]

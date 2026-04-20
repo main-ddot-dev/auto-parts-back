@@ -4,6 +4,10 @@ import io
 import logging
 from PIL import Image
 
+# Force U2NET_HOME to /tmp BEFORE any rembg import
+# Prevents "Read-only file system" on /home/sbx_user1051
+os.environ['U2NET_HOME'] = '/tmp'
+
 # Logger configuration
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -15,16 +19,18 @@ def handler(event, context):
     global session
     from rembg import remove, new_session
 
-    # 1. Absolute path to the model baked into the Docker image
-    model_path = "/var/task/model_data/.u2net/u2net.onnx"
+    # 1. Exact path where the model was placed in the Dockerfile
+    model_path = "/var/task/models/u2net.onnx"
 
     if session is None:
         if os.path.exists(model_path):
             logger.info(f"Model found at {model_path}. Skipping download.")
             session = new_session("u2net", model_path=model_path)
         else:
-            logger.warning(f"Model not found at {model_path}. Attempting download (slow).")
-            session = new_session("u2net")
+            logger.error(f"Model not found at {model_path}")
+            contents = os.listdir('/var/task/models') if os.path.exists('/var/task/models') else 'Directory not found'
+            logger.error(f"Contents of /var/task/models: {contents}")
+            raise FileNotFoundError(f"Model not found at {model_path}")
 
     # 2. S3 event data
     s3 = boto3.client('s3')
@@ -33,20 +39,20 @@ def handler(event, context):
 
     try:
         response = s3.get_object(Bucket=bucket, Key=key)
-        original_image = Image.open(io.BytesIO(response['Body'].read()))
+        input_image = Image.open(io.BytesIO(response['Body'].read()))
 
         # 3. AI background removal
         logger.info(f"Starting AI processing for: {key}...")
-        output_image = remove(original_image, session=session)
+        output_image = remove(input_image, session=session)
 
-        # 4. Save as PNG
+        # 4. Save as PNG and upload
         out_buffer = io.BytesIO()
         output_image.save(out_buffer, format='PNG')
         out_buffer.seek(0)
 
         dest_bucket = os.environ['DESTINATION_BUCKET']
         dest_prefix = os.environ['DESTINATION_PREFIX']
-        new_key = f"{dest_prefix}{os.path.basename(key).split('.')[0]}.png"
+        new_key = f"{dest_prefix}{os.path.basename(key).rsplit('.', 1)[0]}.png"
 
         s3.put_object(Bucket=dest_bucket, Key=new_key, Body=out_buffer, ContentType='image/png')
         logger.info(f"Success: image saved to {new_key}")

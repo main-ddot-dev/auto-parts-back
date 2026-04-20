@@ -11,23 +11,22 @@ logger.setLevel(logging.INFO)
 # AWS S3 client
 s3 = boto3.client('s3')
 
+# Global session to persist the model across invocations
+session = None
+
 def handler(event, context):
+    global session
+
     try:
-        # 1. Symlink model to /tmp (writable) — rembg looks for '/tmp/u2net.onnx'
-        os.environ['U2NET_HOME'] = '/tmp'
-        model_file = '/tmp/u2net.onnx'
-        real_model = '/var/task/model_data/.u2net/u2net.onnx'
+        # 1. Load model from local storage using new_session (bypasses download)
+        from rembg import remove, new_session
 
-        # Use lexists to detect symlinks even if broken
-        if not os.path.lexists(model_file):
-            try:
-                os.symlink(real_model, model_file)
-                logger.info("Model symlink created successfully.")
-            except FileExistsError:
-                pass
-
-        # Lazy load rembg to avoid Lambda init timeout (10s limit)
-        from rembg import remove
+        if session is None:
+            logger.info("Loading model from local storage...")
+            model_path = "/root/.u2net/u2net.onnx"
+            if not os.path.exists(model_path):
+                model_path = "/tmp/.u2net/u2net.onnx"
+            session = new_session("u2net", model_path=model_path)
 
         # 2. Which file was just uploaded to S3?
         source_bucket = event['Records'][0]['s3']['bucket']['name']
@@ -46,8 +45,8 @@ def handler(event, context):
         image_bytes = response['Body'].read()
         original_image = Image.open(io.BytesIO(image_bytes))
 
-        # 4. AI background removal
-        clean_image = remove(original_image)
+        # 4. AI background removal with pre-loaded session
+        clean_image = remove(original_image, session=session)
 
         # 5. Prepare the final PNG in memory
         buffer = io.BytesIO()

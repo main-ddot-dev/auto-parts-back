@@ -15,10 +15,10 @@ ENV NUMBA_THREADING_LAYER=workqueue
 ENV NUMBA_NUM_THREADS=1
 ENV OMP_NUM_THREADS=1
 
-# 5. Pre-download AI model in default rembg path and copy to /tmp with full permissions
-RUN mkdir -p /home/sbx_user1051/.u2net
-RUN python -c "from rembg import remove; from PIL import Image; remove(Image.new('RGB', (1,1)))"
-RUN chmod -R 777 /root/.u2net && cp -r /root/.u2net /tmp/ && chmod -R 777 /tmp/.u2net
+# 5. Download AI model to a known path with read permissions
+RUN mkdir -p /var/task/model_data
+RUN python -c "import os; os.environ['U2NET_HOME']='/var/task/model_data'; from rembg import remove; from PIL import Image; remove(Image.new('RGB', (1,1)))"
+RUN chmod -R 755 /var/task/model_data
 
 # 6. Copy code and set entrypoint
 COPY app.py ${LAMBDA_TASK_ROOT}

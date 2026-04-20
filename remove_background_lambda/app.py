@@ -1,4 +1,9 @@
 import os
+
+# Force U2NET_HOME to /tmp BEFORE any rembg import
+# This prevents "Read-only file system" errors on /home/sbx_user1051
+os.environ['U2NET_HOME'] = '/tmp'
+
 import boto3
 import io
 import logging
@@ -11,24 +16,28 @@ logger.setLevel(logging.INFO)
 # AWS S3 client
 s3 = boto3.client('s3')
 
-# Global session to persist the model across invocations
-session = None
-
 def handler(event, context):
-    global session
-
     try:
-        # 1. Load model from local storage using new_session (bypasses download)
+        # 1. Symlink baked model from /var/task to writable /tmp
+        baked_model = '/var/task/model_data/.u2net/u2net.onnx'
+        tmp_model_dir = '/tmp/.u2net'
+        tmp_model_file = '/tmp/.u2net/u2net.onnx'
+
+        if not os.path.exists(tmp_model_file):
+            os.makedirs(tmp_model_dir, exist_ok=True)
+            try:
+                os.symlink(baked_model, tmp_model_file)
+                logger.info("Symlink created: AI reads from internal storage.")
+            except FileExistsError:
+                pass
+
+        # 2. Import rembg AFTER model path is ready
         from rembg import remove, new_session
 
-        if session is None:
-            logger.info("Loading model from local storage...")
-            model_path = "/root/.u2net/u2net.onnx"
-            if not os.path.exists(model_path):
-                model_path = "/tmp/.u2net/u2net.onnx"
-            session = new_session("u2net", model_path=model_path)
+        logger.info("Loading AI session...")
+        session = new_session("u2net")
 
-        # 2. Which file was just uploaded to S3?
+        # 3. Which file was just uploaded to S3?
         source_bucket = event['Records'][0]['s3']['bucket']['name']
         file_key = event['Records'][0]['s3']['object']['key']
 
@@ -40,20 +49,20 @@ def handler(event, context):
 
         logger.info(f"Starting AI processing for: {file_key}...")
 
-        # 3. Download the image directly into Lambda's RAM
+        # 4. Download the image directly into Lambda's RAM
         response = s3.get_object(Bucket=source_bucket, Key=file_key)
         image_bytes = response['Body'].read()
         original_image = Image.open(io.BytesIO(image_bytes))
 
-        # 4. AI background removal with pre-loaded session
+        # 5. AI background removal
         clean_image = remove(original_image, session=session)
 
-        # 5. Prepare the final PNG in memory
+        # 6. Prepare the final PNG in memory
         buffer = io.BytesIO()
         clean_image.save(buffer, format="PNG")
         buffer.seek(0)
 
-        # 6. Upload to the destination bucket
+        # 7. Upload to the destination bucket
         s3.put_object(
             Bucket=destination_bucket,
             Key=destination_key,

@@ -48,11 +48,11 @@ jobs:
           docker push $REGISTRY/$REPOSITORY:$IMAGE_TAG
           
           # Actualizar la Lambda correspondiente
-          # aws lambda update-function-code \
-          #   --function-name ${{ env.LAMBDA_NAME }} \
-          #   --image-uri $REGISTRY/$REPOSITORY:$IMAGE_TAG
+          aws lambda update-function-code \
+            --function-name ${{ env.LAMBDA_NAME }} \
+            --image-uri $REGISTRY/$REPOSITORY:$IMAGE_TAG
             
           # Update Lambda environment variables
-          # aws lambda update-function-configuration \
-          #   --function-name ${{ env.LAMBDA_NAME }} \
-          #   --environment "Variables={DESTINATION_BUCKET=${{ env.DEST_BUCKET }},DESTINATION_PREFIX=remove-background/processed/}"
+          aws lambda update-function-configuration \
+            --function-name ${{ env.LAMBDA_NAME }} \
+            --environment "Variables={DESTINATION_BUCKET=${{ env.DEST_BUCKET }},DESTINATION_PREFIX=remove-background/processed/}"

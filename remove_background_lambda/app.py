@@ -2,7 +2,6 @@ import os
 import boto3
 import io
 import logging
-from rembg import remove
 from PIL import Image
 
 # Logger configuration
@@ -14,6 +13,8 @@ s3 = boto3.client('s3')
 
 def handler(event, context):
     try:
+        # Lazy load rembg to avoid Lambda init timeout (10s limit)
+        from rembg import remove
         # 1. Which file was just uploaded to S3?
         source_bucket = event['Records'][0]['s3']['bucket']['name']
         file_key = event['Records'][0]['s3']['object']['key']

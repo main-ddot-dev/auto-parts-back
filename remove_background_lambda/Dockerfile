@@ -15,6 +15,7 @@ RUN pip install -r requirements.txt
 
 # 5. Environment variables for robustness
 ENV NUMBA_CACHE_DIR=/tmp
+ENV NUMBA_THREADING_LAYER=workqueue
 ENV U2NET_HOME=/var/task/.u2net
 RUN python -c "from rembg import remove; from PIL import Image; remove(Image.new('RGB', (1,1)))"
 

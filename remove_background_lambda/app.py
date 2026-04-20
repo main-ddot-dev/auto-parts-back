@@ -1,53 +1,43 @@
 import os
-import shutil
 import boto3
 import io
 import logging
 from PIL import Image
 
-# --- CRITICAL: environment setup BEFORE any rembg/numba import ---
-# Copy pre-compiled Numba cache from read-only /var/task to writable /tmp
-tmp_cache = '/tmp/numba_cache'
-precompiled_cache = '/var/task/precompiled_numba'
-
-if not os.path.exists(tmp_cache):
-    os.makedirs(tmp_cache, exist_ok=True)
-    if os.path.exists(precompiled_cache):
-        for item in os.listdir(precompiled_cache):
-            src = os.path.join(precompiled_cache, item)
-            dst = os.path.join(tmp_cache, item)
-            if os.path.isfile(src):
-                shutil.copy2(src, dst)
-
-os.environ['NUMBA_CACHE_DIR'] = tmp_cache
-os.environ['U2NET_HOME'] = '/tmp'
+# --- Environment lockdown BEFORE any rembg/numba import ---
+os.environ['NUMBA_THREADING_LAYER'] = 'workqueue'
+os.environ['NUMBA_NUM_THREADS'] = '1'
 os.environ['OMP_NUM_THREADS'] = '1'
+os.environ['U2NET_HOME'] = '/tmp'
 
 # Logger configuration
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-# Global session to persist the AI model across invocations (warm starts)
-session = None
-
 def handler(event, context):
-    global session
+    # 1. Symlink baked model to where rembg expects it (/tmp/u2net.onnx)
+    baked_model = "/var/task/models/u2net.onnx"
+    target_model = "/tmp/u2net.onnx"
+
+    if not os.path.exists(target_model):
+        try:
+            os.symlink(baked_model, target_model)
+            logger.info(f"Symlink created: {target_model} -> {baked_model}")
+        except Exception as e:
+            logger.warning(f"Error creating symlink: {e}")
+
+    # 2. Lazy import and session init
     from rembg import remove, new_session
 
-    # 1. Load pre-installed model with pre-compiled cache
-    model_path = "/var/task/models/u2net.onnx"
+    logger.info("Initializing AI session...")
+    session = new_session("u2net", model_path=target_model)
 
-    if session is None:
-        logger.info("Initializing AI session with pre-compiled cache...")
-        session = new_session("u2net", model_path=model_path)
-
-    # 2. S3 event data
+    # 3. S3 event data
     s3 = boto3.client('s3')
     bucket = event['Records'][0]['s3']['bucket']['name']
     key = event['Records'][0]['s3']['object']['key']
 
     try:
-        # 3. Download image from S3
         response = s3.get_object(Bucket=bucket, Key=key)
         input_image = Image.open(io.BytesIO(response['Body'].read()))
 

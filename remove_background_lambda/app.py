@@ -43,23 +43,34 @@ def handler(event, context):
         img = Image.open(io.BytesIO(response['Body'].read())).convert("RGB")
         original_size = img.size
 
-        # Resize for u2net (expects 320x320)
+        # 4. Pre-process with ImageNet normalization (calibrates colors for u2net)
         img_resized = img.resize((320, 320), Image.Resampling.LANCZOS)
-        input_data = np.array(img_resized).astype('float32') / 255.0
-        input_data = np.transpose(input_data, (2, 0, 1))
+        img_np = np.array(img_resized).astype('float32') / 255.0
+
+        # ImageNet mean/std — the exact values u2net was trained with
+        mean = np.array([0.485, 0.456, 0.406], dtype=np.float32)
+        std = np.array([0.229, 0.224, 0.225], dtype=np.float32)
+        img_np = (img_np - mean) / std
+
+        input_data = np.transpose(img_np, (2, 0, 1))
         input_data = np.expand_dims(input_data, axis=0)
 
-        # 4. Run AI inference
+        # 5. Run AI inference
         logger.info(f"Processing: {key}")
         ort_inputs = {ort_session.get_inputs()[0].name: input_data}
         mask = ort_session.run(None, ort_inputs)[0][0][0]
 
-        # 5. Post-process: normalize mask and apply as alpha channel
+        # 6. Post-process: normalize mask, threshold to clean holes and sharpen edges
         mask = (mask - mask.min()) / (mask.max() - mask.min())
+
+        # Threshold: anything below 0.2 opacity becomes fully transparent
+        # This cleans up foggy holes (wheel centers, door gaps, etc.)
+        mask = np.where(mask < 0.2, 0.0, mask)
+
         mask_img = Image.fromarray((mask * 255).astype('uint8')).resize(original_size, Image.Resampling.LANCZOS)
         img.putalpha(mask_img)
 
-        # 6. Save as PNG and upload
+        # 7. Save as PNG and upload
         out_buffer = io.BytesIO()
         img.save(out_buffer, format='PNG')
         out_buffer.seek(0)
